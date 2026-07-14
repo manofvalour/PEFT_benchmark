@@ -1,0 +1,9 @@
+.venv/
+.env
+.ruff_cache/
+__pycache__/
+*.pyc
+outputs/
+.ipynb_checkpoints/
+*.egg-info/
+dist/

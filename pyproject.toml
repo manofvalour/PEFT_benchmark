@@ -1,0 +1,22 @@
+[project]
+name = "research-peft"
+version = "0.1.0"
+description = "a research project for PEFT comparision"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = []
+
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+
+[tool.ruff.lint]
+extend-select = [
+    "F", "W", "E", "I", "UP", "C4", "FA", "ISC",
+    "ICN", "RET", "SIM", "TID", "TC", "PTH", "TD",
+    "NPY", "FURB",
+]
+
+[tool.ruff.format]
+quote-style = "double"

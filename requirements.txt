@@ -1,0 +1,16 @@
+torch
+transformers
+peft
+datasets
+accelerate
+evaluate
+scikit-learn
+numpy
+pandas
+matplotlib
+pyyaml
+tqdm
+rich
+deepspeed==0.19.2
+ruff
+ty
