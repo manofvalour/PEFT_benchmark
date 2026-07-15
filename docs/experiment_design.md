@@ -90,7 +90,7 @@ These are the evaluation metrics:
 ### B. Parameter Efficiency
 - Trainable parameters
 - Total parameters
-- Percentage trainable
+- Percentage trainable ((trainable parameter)/(Total parameters)) * 100
 
 ### c. Memory Efficiency
 - Peak GPU memory
