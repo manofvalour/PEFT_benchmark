@@ -15,3 +15,6 @@ rich
 deepspeed==0.19.2
 ruff
 ty
+rouge_score
+sacrebleu
+bert_score

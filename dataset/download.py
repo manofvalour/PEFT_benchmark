@@ -10,7 +10,6 @@ import logging
 from pathlib import Path
 
 import torch
-
 from datasets import Dataset, DatasetDict
 
 logger = logging.getLogger(__name__)
@@ -32,8 +31,8 @@ CHAT_PROMPT = "{system}\n\n" + "\n\n".join(
 
 
 # Format Converters
-def text_to_alpaca(row: dict) -> str:
-    """Converting the text to an Alpaca instruction format (instruction following)"""
+def alpaca_to_text(row: dict) -> str:
+    """Converting the alpaca to a text format (instruction following)"""
 
     context_str = ", using the input below as context" if row.get("input") else ""
     input_block = f"### Input:\n{row['input']}\n\n" if row.get("input") else ""
@@ -47,7 +46,7 @@ def text_to_alpaca(row: dict) -> str:
 
 
 def text_to_sharegpt(row: dict, system_prompt: str = "") -> str:
-    """Convert text to ShareGPT multi-turn conversation."""
+    """Convert sharegpt to a text format."""
 
     parts = []
     if system_prompt:
@@ -91,7 +90,7 @@ class DataBuilder:
                     "instruction": item["question"],
                     "input": item.get("context", ""),
                     "output": item["answer"],
-                    "text": text_to_alpaca(
+                    "text": alpaca_to_text(
                         {
                             "instruction": item["question"],
                             "input": item.get("context", ""),
@@ -124,7 +123,7 @@ class DataBuilder:
                     "instruction": instruction,
                     "input": "",
                     "output": f"```{lang}\n{item['completion']}\n```",
-                    "text": text_to_alpaca(
+                    "text": alpaca_to_text(
                         {
                             "instruction": instruction,
                             "input": "",
@@ -161,7 +160,7 @@ class DataBuilder:
                     "instruction": instruction,
                     "input": item["document"],
                     "output": item["summary"],
-                    "text": text_to_alpaca(
+                    "text": alpaca_to_text(
                         {
                             "instruction": instruction,
                             "input": item["document"],
@@ -210,7 +209,7 @@ class DataBuilder:
                         "instruction": instruction,
                         "input": input,
                         "output": output,
-                        "text": text_to_alpaca(
+                        "text": alpaca_to_text(
                             {"instruction": instruction, "input": input, "output": output}
                         ),
                     }

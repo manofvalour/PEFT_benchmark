@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 import torch
+from datasets import load_dataset
 from transformers import (
     AutoModelForCausalLM,
     AutoTokenizer,
@@ -17,9 +18,8 @@ from transformers import (
 )
 from trl.trainer.sft_trainer import SFTTrainer
 
-from datasets import load_dataset
-from datasets.download import custom_data_collator
-from src.configs.config import DataConfig, ModelConfig
+from dataset.download import custom_data_collator
+from scripts.config import DataConfig, ModelConfig
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -57,7 +57,7 @@ def load_tokenizer(model_cfg: ModelConfig):
     return tokenizer
 
 
-def load_and_prepare_data(data_cfg: DataConfig):
+def load_and_prepare_data(data_cfg: DataConfig) -> tuple:
     """Load and tokenize dataset."""
 
     ## loading the dataset directly using the Dataset Library
