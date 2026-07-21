@@ -2,7 +2,6 @@
 Fine-tuning Trainer
 """
 
-import argparse
 import json
 import logging
 from pathlib import Path
@@ -14,12 +13,14 @@ from transformers import (
     AutoModelForCausalLM,
     AutoTokenizer,
     EarlyStoppingCallback,
-    TrainingArguments,
 )
+from trl import SFTConfig
 from trl.trainer.sft_trainer import SFTTrainer
 
-from dataset.download import custom_data_collator
 from scripts.config import DataConfig, ModelConfig
+
+# Main Training Entry Point
+from scripts.dataset_utils import custom_data_collator
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -33,13 +34,13 @@ def load_base_model(model_cfg: ModelConfig):
         "pretrained_model_name_or_path": model_cfg.model_name_or_path,
         "trust_remote_code": model_cfg.trust_remote_code,
         "torch_dtype": torch.bfloat16,
-        "device_map": "auto",
+        #  "device_map": "auto",
     }
 
-    if model_cfg.cache_dir:
-        model_kwargs["cache_dir"] = model_cfg.cache_dir
-    if model_cfg.use_flash_attention:
-        model_kwargs["attn_implementation"] = "flash_attention_2"
+    # if model_cfg.cache_dir:
+    #   model_kwargs["cache_dir"] = model_cfg.cache_dir
+    if model_cfg.use_flash_attn:
+        model_kwargs["attn_implementation"] = "sdpa"
 
     return AutoModelForCausalLM.from_pretrained(**model_kwargs)
 
@@ -110,7 +111,6 @@ def format_instruction(sample: dict, data_cfg: DataConfig) -> str:
     return f"{data_cfg.instruction_template}{instruction}\n\n{data_cfg.response_template}{response}"
 
 
-# Main Training Entry Point
 def train(config_path: str):
     with Path.open(config_path) as f:
         cfg = json.load(f)
@@ -124,18 +124,20 @@ def train(config_path: str):
     model = load_base_model(model_cfg)
 
     # Load data
-    train_ds, val_ds = load_and_prepare_data(data_cfg, tokenizer)
+    train_ds, val_ds = load_and_prepare_data(data_cfg)
 
     # Format dataset
     def formatting_func(sample):
         return format_instruction(sample, data_cfg)
 
     # Training arguments
-    training_args = TrainingArguments(
+    training_args = SFTConfig(
         **train_args_dict,
+        deepspeed="scripts/config_file/ds_config.json",
         load_best_model_at_end=True,
         metric_for_best_model="eval_loss",
         greater_is_better=False,
+        loss_type="nll",
     )
 
     # Completion-only collator (trains only on responses, not prompts)
@@ -162,10 +164,3 @@ def train(config_path: str):
     trainer.model.save_pretrained(output_dir)
     tokenizer.save_pretrained(output_dir)
     logger.info(f">>>> Fine tuned model saved to {output_dir}")
-
-
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--config", required=True, help="Path to JSON config file")
-    args = parser.parse_args()
-    train(args.config)

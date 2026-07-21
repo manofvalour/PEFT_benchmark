@@ -9,3 +9,5 @@ outputs/
 dist/
 todo.md
 *.json
+*.pt
+dataset/
