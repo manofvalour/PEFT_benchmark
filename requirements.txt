@@ -1,5 +1,6 @@
-torch
+torch==2.12.0
 transformers
+trl
 peft
 datasets
 accelerate
@@ -14,3 +15,12 @@ rich
 deepspeed==0.19.2
 ruff
 ty
+rouge_score
+sacrebleu
+bert_score
+#flash-attn==2.0.2
+modal
+huggingface_hub
+wandb
+evaluate
+lm-eval

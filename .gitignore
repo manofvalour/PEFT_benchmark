@@ -7,3 +7,6 @@ outputs/
 .ipynb_checkpoints/
 *.egg-info/
 dist/
+todo.md
+*.pt
+dataset/

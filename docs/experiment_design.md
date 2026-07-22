@@ -61,6 +61,7 @@ Evaluating how different Parameter-Efficient Fine-Tuning (PEFT) methods trade of
 
 ## dataset
 - AGnews
+-yahma/alpaca-cleaned
 
 ## PEFT methods to compare
 These are the different PEFT methods to compare:
@@ -85,12 +86,11 @@ These are the evaluation metrics:
 **Evaluation metrics for instruction tuning:**
 - ROUGE
 - BLEU
-- Exact Match
 
 ### B. Parameter Efficiency
 - Trainable parameters
 - Total parameters
-- Percentage trainable
+- Percentage trainable ((trainable parameter)/(Total parameters)) * 100
 
 ### c. Memory Efficiency
 - Peak GPU memory
@@ -127,7 +127,7 @@ All experiments will be executed on the same hardware using identical software v
 - Maximum GPU memory: 24 GB
 - Precision: BF16 (or FP16)
 - Gradient checkpointing: Enabled
-- Maximum sequence length: 512
+- Maximum sequence length: 1024
 - Batch size: Fixed
 - Gradient accumulation: Fixed
 
