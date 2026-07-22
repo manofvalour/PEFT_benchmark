@@ -19,7 +19,7 @@ volume = modal.Volume.from_name("training-outputs", create_if_missing=True)
 
 @app.function(
     image=image,
-    gpu="A10G:2",
+    gpu="A10G:4",
     timeout=60 * 60 * 2,
     volumes={"/root/app/outputs": volume},
     secrets=[modal.Secret.from_name("wandb-secret")],

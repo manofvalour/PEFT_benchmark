@@ -41,7 +41,7 @@ eval_volume = modal.Volume.from_name("evaluation-outputs", create_if_missing=Tru
     },
     secrets=[modal.Secret.from_name("wandb-secret")],
 )
-def run_eval_suite(model_path: str = "/training-outputs/qwen2.5-1.5b-finetune"):
+def run_eval_suite(model_path: str = "/training-outputs/checkpoints/qwen2.5-1.5b-finetune"):
     import subprocess
 
     subprocess.run(

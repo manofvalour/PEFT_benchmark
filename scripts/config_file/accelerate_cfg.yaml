@@ -5,5 +5,5 @@ deepspeed_config:
   deepspeed_config_file: ds_config.json
   zero3_init_flag: false
 num_machines: 1
-num_processes: 2          # = number of GPUs
+num_processes: 4          # = number of GPUs
 main_training_function: main

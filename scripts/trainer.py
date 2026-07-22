@@ -8,12 +8,7 @@ from pathlib import Path
 from typing import Any
 
 import torch
-from config import DataConfig, ModelConfig
-
-# Main Training Entry Point
-from dataset_utils import custom_data_collator, train_val_test_split
 from datasets import load_dataset
-from evaluate import EfficiencyMetricsCallback, PerplexityCallback, compute_trainable_params
 from transformers import (
     AutoModelForCausalLM,
     AutoTokenizer,
@@ -21,6 +16,12 @@ from transformers import (
 )
 from trl import SFTConfig
 from trl.trainer.sft_trainer import SFTTrainer
+
+from scripts.config import DataConfig, ModelConfig
+
+# Main Training Entry Point
+from scripts.dataset_utils import custom_data_collator, train_val_test_split
+from scripts.evaluate import EfficiencyMetricsCallback, PerplexityCallback, compute_trainable_params
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
