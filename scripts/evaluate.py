@@ -6,57 +6,44 @@ Evaluation metrics for classification problems:
     Accuracy, Precision, Recall, F1
 
 Evaluation metrics for instruction tuning:
-    BLEU, Exact Match
-
-Parameter Efficiency:
-    Trainable parameters, Total parameters,
-    Percentage trainable ((trainable parameter)/(Total parameters)) * 100
-
-Memory Efficiency:
-    Peak GPU memory, Average GPU memory, Reserved memory, Allocated memory
-
-Computational Efficiency:
-    Training time, Epoch time, Tokens/sec, Samples/sec, Checkpoint size
-
-Composite Metrics
-    Performance per trainable parameters(PTP) ==> Accuracy/trainable parameters
-    Memory Efficiency ==> Accuracy/Peak GPU memory
-    Training Efficiency ==> Accuracy/Training Time
-
+    BLEU, ROUGE, BERTScore
 """
 
-import json
 import logging
-from dataclasses import dataclass, field
+import math
+import time
 from pathlib import Path
 
 import numpy as np
 import torch
 from datasets import Dataset
 from tqdm import tqdm
-from transformers import AutoModelForCausalLM, AutoTokenizer
+from transformers import TrainerCallback
 
 logger = logging.getLogger(__name__)
 
 
-# Perplexity
 @torch.inference_mode()
 def compute_perplexity(
     model,
     tokenizer,
-    texts: list[str],
+    texts: Dataset,
     max_length: int = 1024,
     stride: int = 512,
+    batch_size: int = 4,
 ) -> dict[str, float]:
     """
     Sliding-window perplexity (handles texts longer than context window).
-    Returns mean PPL, median PPL, and standard deviation across the corpus.
+    Returns mean PPL and standard deviation across the corpus.
     """
+    from trainer import format_instruction
+
     model.eval()
     ppls = []
 
     for text in tqdm(texts, desc="Computing perplexity"):
-        encodings = tokenizer(text, return_tensors="pt", truncation=False)
+        data = format_instruction(texts)
+        encodings = tokenizer(data, return_tensors="pt", truncation=False)
         input_ids = encodings.input_ids.to(model.device)
         seq_len = input_ids.size(1)
 
@@ -88,166 +75,211 @@ def compute_perplexity(
     }
 
 
+# Perplexity
+class PerplexityCallback(TrainerCallback):
+    @torch.inference_mode()
+    def on_evaluate(self, args, state, control, metrics=None, **kwargs):
+        if metrics is None or not state.is_world_process_zero:
+            return
+        eval_loss = metrics.get("eval_loss")
+        if eval_loss is not None:
+            perplexity = math.exp(eval_loss) if eval_loss < 20 else float("inf")  # guard overflow
+            import wandb
+
+            if wandb.run is not None:
+                wandb.log({"benchmark/perplexity": perplexity}, step=state.global_step)
+
+
 # Generation Quality Metrics
-def compute_rouge(predictions: list[str], references: list[str]) -> dict[str, float]:
-    """ROUGE-1, ROUGE-2, ROUGE-L scores."""
-    try:
-        from rouge_score import rouge_scorer
+class EvaluationMetrics:
+    def __init__(self, predictions: list[str], references: list[str]):
+        self.predictions = predictions
+        self.references = references
 
-        scorer = rouge_scorer.RougeScorer(["rouge1", "rouge2", "rougeL"], use_stemmer=True)
-        scores = {"rouge1": [], "rouge2": [], "rougeL": []}
-        for pred, ref in zip(predictions, references):
-            s = scorer.score(ref, pred)
-            for k in scores:
-                scores[k].append(s[k].fmeasure)
-        return {k: round(float(np.mean(v)), 4) for k, v in scores.items()}
+    def compute_rouge(self) -> dict[str, float]:
+        """ROUGE-1, ROUGE-2, ROUGE-L scores."""
+        try:
+            from rouge_score import rouge_scorer
 
-    except ImportError:
-        logger.warning("Install rouge-score: pip install rouge-score")
-        return {}
+            scorer = rouge_scorer.RougeScorer(["rouge1", "rouge2", "rougeL"], use_stemmer=True)
+            scores = {"rouge1": [], "rouge2": [], "rougeL": []}
+            for pred, ref in zip(self.predictions, self.references):
+                s = scorer.score(ref, pred)
+                for k in scores:
+                    scores[k].append(s[k].fmeasure)
+            return {k: round(float(np.mean(v)), 4) for k, v in scores.items()}
 
+        except ImportError:
+            logger.warning("Install rouge-score: pip install rouge-score")
+            return {}
 
-def compute_bertscore(
-    predictions: list[str],
-    references: list[str],
-    lang: str = "en",
-    model_type: str = "microsoft/deberta-xlarge-mnli",
-) -> dict[str, float]:
-    """BERTScore F1 (semantic similarity)."""
-    try:
-        from bert_score import score
+    def compute_bertscore(
+        self,
+        lang: str = "en",
+        model_type: str = "roberta-large",
+    ) -> dict[str, float]:
+        """BERTScore F1 (semantic similarity)."""
+        try:
+            from bert_score import score
 
-        P, R, F1 = score(predictions, references, lang=lang, model_type=model_type, verbose=False)
-        return {
-            "bertscore_precision": round(P.mean().item(), 4),
-            "bertscore_recall": round(R.mean().item(), 4),
-            "bertscore_f1": round(F1.mean().item(), 4),
-        }
-    except ImportError:
-        logger.warning("Install bert-score: pip install bert-score")
-        return {}
-
-
-def compute_bleu(prediction: list[str], reference: list[str]) -> dict[str, float]:
-
-    import sacrebleu
-
-    try:
-        # Compute corpus BLEU
-        res = []
-        for pred, ref in zip(prediction, reference):
-            result = sacrebleu.corpus_bleu(pred, ref)
-            res.append(result.score)
-
-        return {"Bleu Score": np.mean(res)}
-
-    except ImportError:
-        logger.warning("insall sacrebleu: pip install sacrebleu")
-        return {}
-
-
-# Instruction-Following Benchmark
-@dataclass
-class BenchmarkResult:
-    model_name: str
-    task: str
-    metrics: dict[str, float] = field(default_factory=dict)
-    num_samples: int = 0
-    generation_config: dict = field(default_factory=dict)
-
-
-def run_generation_benchmark(
-    model,
-    tokenizer,
-    dataset: Dataset,
-    prompt_template: str,
-    reference_column: str = "output",
-    max_new_tokens: int = 256,
-    batch_size: int = 8,
-    temperature: float = 0.1,
-) -> BenchmarkResult:
-    """Run full generation benchmark on a dataset split."""
-    predictions, references = [], []
-
-    for i in tqdm(range(0, len(dataset), batch_size), desc="Evaluating"):
-        batch = dataset.select(range(i, min(i + batch_size, len(dataset))))
-        prompts = [prompt_template.format(**row) for row in batch]
-        refs = [row[reference_column] for row in batch]
-
-        ## encode input
-        inputs = tokenizer(
-            prompts, return_tensors="pt", padding=True, truncation=True, max_length=512
-        ).to(model.device)
-        # run model generation
-        with torch.inference_mode():
-            outputs = model.generate(
-                **inputs,
-                max_new_tokens=max_new_tokens,
-                temperature=temperature,
-                do_sample=temperature > 0,
-                pad_token_id=tokenizer.eos_token_id,
+            P, R, F1 = score(
+                self.predictions,
+                self.references,
+                lang=lang,
+                model_type=model_type,
+                verbose=False,  # baseline_path=None,
+                #  idf=False
             )
+            return {
+                "bertscore_precision": round(P.mean().item(), 4),
+                "bertscore_recall": round(R.mean().item(), 4),
+                "bertscore_f1": round(F1.mean().item(), 4),
+            }
+        except ImportError:
+            logger.warning("Install bert-score: pip install bert-score")
+            return {}
 
-        # decode the input
-        decoded = tokenizer.batch_decode(outputs, skip_special_tokens=True)
+    def compute_bleu(self) -> dict[str, float]:
+        try:
+            import sacrebleu
+        except ImportError:
+            logger.warning("install sacrebleu: pip install sacrebleu")
+            return {}
 
-        # Strip prompt from output
-        for prompt, dec, ref in zip(prompts, decoded, refs):
-            predictions.append(dec[len(prompt) :].strip())
-            references.append(ref.strip())
-
-    rouge = compute_rouge(predictions, references)
-    bert = compute_bertscore(predictions, references)
-    bleu = compute_bleu(predictions, references)
-
-    return BenchmarkResult(
-        model_name=getattr(model.config, "_name_or_path", "unknown"),
-        task="generation",
-        metrics={**rouge, **bert, **bleu},
-        num_samples=len(dataset),
-        generation_config={"max_new_tokens": max_new_tokens, "temperature": temperature},
-    )
+        result = sacrebleu.corpus_bleu(self.predictions, [self.references])
+        return {"Bleu Score": result.score}
 
 
-# ─────────────────────────────────────────────
-# Comparison: Finetuned models
-# ─────────────────────────────────────────────
+def compute_trainable_params(model, trainer=None) -> dict:
+    """Report trainable vs total parameter counts."""
+    total = sum(p.numel() for p in model.parameters())
+    trainable = sum(p.numel() for p in model.parameters() if p.requires_grad)
 
-
-def compare_models(
-    base_model_path: str,
-    adapter_path: str,
-    eval_texts: list[str],
-    prompt_template: str,
-    output_json: str = "eval_comparison.json",
-):
-    """Side-by-side perplexity comparison of base vs fine-tuned model."""
-    import LoraInference
-
-    logger.info("Evaluating base model...")
-    base_tokenizer = AutoTokenizer.from_pretrained(base_model_path)
-    base_model = AutoModelForCausalLM.from_pretrained(
-        base_model_path, torch_dtype=torch.bfloat16, device_map="auto"
-    )
-    base_ppl = compute_perplexity(base_model, base_tokenizer, eval_texts)
-    base_benchmark_result = run_generation_benchmark(
-        base_model, base_tokenizer, eval_texts, prompt_template
-    )
-    base_result = base_benchmark_result.metrics
-
-    logger.info("Evaluating fine-tuned model...")
-    ft = LoraInference(base_model_path, adapter_path)
-    ft_ppl = compute_perplexity(ft.model, ft.tokenizer, eval_texts)
-    benchmark_result = run_generation_benchmark(ft.model, ft.tokenizer, eval_texts, prompt_template)
-    ft_result = benchmark_result.metrics
-
-    results = {
-        "base_model": {"path": base_model_path, **base_ppl, **base_result},
-        "finetuned_model": {"path": adapter_path, **ft_ppl, **ft_result},
-        "delta": {k: round(base_ppl[k] - ft_ppl[k], 4) for k in base_ppl},
+    metrics = {
+        "total_params": total,
+        "trainable_params": trainable,
+        "trainable_pct": round(100 * trainable / total, 4),
+        "total_M": round(total / 1e6, 2),
+        "trainable_M": round(trainable / 1e6, 2),
     }
 
-    with Path.open(output_json, "w") as f:
-        json.dump(results, f, indent=2)
-    logger.info(f"Results saved to {output_json}")
-    return results
+    print(f"Trainable params: {trainable:,} / {total:,} ({metrics['trainable_pct']:.4f}%)")
+
+    if trainer is not None:
+        import wandb
+
+        trainer.log(metrics)
+        if wandb.run is not None:
+            wandb.config.update(metrics)
+    return metrics
+
+
+def compute_computational_efficiency_metrics(training_time, epoch_time, num_tokens, num_samples):
+    """
+    Compute computational efficiency metrics.
+    """
+    tokens_per_sec = num_tokens / training_time
+    samples_per_sec = num_samples / training_time
+
+    return {
+        "training_time": training_time,
+        "epoch_time": epoch_time,
+        "tokens_per_sec": tokens_per_sec,
+        "samples_per_sec": samples_per_sec,
+    }
+
+
+class EfficiencyMetricsCallback(TrainerCallback):
+    def __init__(self):
+        self.train_start_time = None
+        self.epoch_start_time = None
+        self.step_start_time = None
+        self.mem_samples = []  # for "average" GPU memory across steps
+        self.tokens_seen_this_log = 0
+        self.samples_seen_this_log = 0
+        self.last_log_time = None
+
+    def on_train_begin(self, args, state, control, **kwargs):
+        self.train_start_time = time.time()
+        if torch.cuda.is_available():
+            torch.cuda.reset_peak_memory_stats()
+
+    def on_epoch_begin(self, args, state, control, **kwargs):
+        self.epoch_start_time = time.time()
+        if torch.cuda.is_available():
+            torch.cuda.reset_peak_memory_stats()
+
+    def on_epoch_end(self, args, state, control, **kwargs):
+        epoch_time = time.time() - self.epoch_start_time
+        if state.is_world_process_zero:
+            self._log({"time/epoch_seconds": epoch_time}, state)
+
+    def on_step_begin(self, args, state, control, **kwargs):
+        self.step_start_time = time.time()
+        if self.last_log_time is None:
+            self.last_log_time = self.step_start_time
+
+    def on_step_end(self, args, state, control, **kwargs):
+        # sample memory every step so the "average" is meaningful
+        if torch.cuda.is_available():
+            allocated = torch.cuda.memory_allocated() / 1e9
+            self.mem_samples.append(allocated)
+
+        # accumulate tokens/samples between logging_steps intervals
+        train_batch_size = args.per_device_train_batch_size * args.world_size
+        self.samples_seen_this_log += train_batch_size
+
+        # approx tokens: batch_size * seq_len;
+        seq_len = getattr(args, "max_seq_length", None) or 2048
+        self.tokens_seen_this_log += train_batch_size * seq_len
+
+        if state.global_step % args.logging_steps == 0 and state.global_step > 0:
+            now = time.time()
+            elapsed = now - self.last_log_time
+            metrics = {}
+
+            if torch.cuda.is_available():
+                metrics["memory/allocated_gb"] = torch.cuda.memory_allocated() / 1e9
+                metrics["memory/reserved_gb"] = torch.cuda.memory_reserved() / 1e9
+
+                if torch.distributed.is_initialized():
+                    peak_tensor = torch.tensor(torch.cuda.max_memory_allocated(), device="cuda")
+                    torch.distributed.all_reduce(peak_tensor, op=torch.distributed.ReduceOp.MAX)
+                    metrics["memory/peak_gb_across_gpus"] = peak_tensor.item() / 1e9
+
+                else:
+                    metrics["memory/peak_gb_across_gpus"] = torch.cuda.max_memory_allocated() / 1e9
+
+                if self.mem_samples:
+                    metrics["memory/average_gb"] = sum(self.mem_samples) / len(self.mem_samples)
+
+            if elapsed > 0:
+                metrics["throughput/tokens_per_sec"] = self.tokens_seen_this_log / elapsed
+                metrics["throughput/samples_per_sec"] = self.samples_seen_this_log / elapsed
+
+            if state.is_world_process_zero:
+                self._log(metrics, state)
+
+            # reset the interval accumulators
+            self.tokens_seen_this_log = 0
+            self.samples_seen_this_log = 0
+            self.last_log_time = now
+
+    def on_train_end(self, args, state, control, **kwargs):
+        total_time = time.time() - self.train_start_time
+        if state.is_world_process_zero:
+            self._log({"time/total_training_seconds": total_time}, state)
+
+    def on_save(self, args, state, control, **kwargs):
+        if not state.is_world_process_zero:
+            return
+        ckpt_dir = Path(args.output_dir) / f"checkpoint-{state.global_step}"
+        if ckpt_dir.is_dir():
+            size_bytes = sum(f.stat().st_size for f in ckpt_dir.rglob("*") if f.is_file())
+            self._log({"checkpoint/size_gb": size_bytes / 1e9}, state)
+
+    def _log(self, metrics, state):
+        import wandb
+
+        if wandb.run is not None:
+            wandb.log(metrics, step=state.global_step)

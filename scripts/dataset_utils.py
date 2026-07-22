@@ -255,23 +255,23 @@ def custom_data_collator(tokenizer, response_template: str):
 
 def train_val_test_split(
     dataset: Dataset,
-    val_ratio: float = 0.05,
+    val_ratio: float = 0.5,
     test_ratio: float = 0.05,
     seed: int = 42,
 ) -> DatasetDict:
     """Split a dataset into train/val/test."""
     total = len(dataset)
     n_test = int(total * test_ratio)
-    n_val = int(total * val_ratio)
+    n_val = int(n_test * val_ratio)
 
     tmp = dataset.train_test_split(test_size=n_test, seed=seed)
-    train_val = tmp["train"].train_test_split(test_size=n_val, seed=seed)
+    train_val = tmp["test"].train_test_split(test_size=n_val, seed=seed)
 
     return DatasetDict(
         {
-            "train": train_val["train"],
+            "train": tmp["train"],
             "validation": train_val["test"],
-            "test": tmp["test"],
+            "test": train_val["train"],
         }
     )
 

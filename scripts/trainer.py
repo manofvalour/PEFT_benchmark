@@ -8,7 +8,12 @@ from pathlib import Path
 from typing import Any
 
 import torch
+from config import DataConfig, ModelConfig
+
+# Main Training Entry Point
+from dataset_utils import custom_data_collator, train_val_test_split
 from datasets import load_dataset
+from evaluate import EfficiencyMetricsCallback, PerplexityCallback, compute_trainable_params
 from transformers import (
     AutoModelForCausalLM,
     AutoTokenizer,
@@ -16,11 +21,6 @@ from transformers import (
 )
 from trl import SFTConfig
 from trl.trainer.sft_trainer import SFTTrainer
-
-from scripts.config import DataConfig, ModelConfig
-
-# Main Training Entry Point
-from scripts.dataset_utils import custom_data_collator
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -68,30 +68,18 @@ def load_and_prepare_data(data_cfg: DataConfig) -> tuple:
             data_cfg.dataset_config,
             num_proc=data_cfg.num_proc,
         )
-        if "validation" not in raw:
-            split = raw["train"].train_test_split(test_size=data_cfg.val_split, seed=42)
-            train_ds, val_ds = split["train"], split["test"]
-        else:
-            train_ds, val_ds = raw["train"], raw["validation"]
 
-    ## Loading dataset from local storage
-    elif data_cfg.train_file:
-        train_ds = load_dataset("json", data_files=data_cfg.train_file)["train"]
+        split = train_val_test_split(
+            raw["train"], val_ratio=data_cfg.val_split, test_ratio=data_cfg.test_split
+        )
 
-        if data_cfg.val_file:
-            val_ds = load_dataset("json", data_files=data_cfg.val_file)["train"]
-
-        else:
-            val_data = train_ds.train_test_split(test_size=data_cfg.val_split)
-
-            train_ds = val_data["train"]
-            val_ds = val_data["test"]
+        train_ds, test_ds, val_ds = split["train"], split["test"], split["validation"]
 
     else:
         raise ValueError("Provide dataset_name or train_file.")
 
-    logger.info(f"Train: {len(train_ds):,} | Val: {len(val_ds):,}")
-    return train_ds, val_ds
+    print(f"Train: {len(train_ds):,} | Val: {len(val_ds):,} | Test: {len(test_ds):,}")
+    return train_ds, val_ds, test_ds
 
 
 # Dataset Preparation
@@ -111,7 +99,7 @@ def format_instruction(sample: dict, data_cfg: DataConfig) -> str:
     return f"{data_cfg.instruction_template}{instruction}\n\n{data_cfg.response_template}{response}"
 
 
-def train(config_path: str):
+def train(config_path: str, train_ds, val_ds):
     with Path.open(config_path) as f:
         cfg = json.load(f)
 
@@ -122,9 +110,6 @@ def train(config_path: str):
     # Load components
     tokenizer = load_tokenizer(model_cfg)
     model = load_base_model(model_cfg)
-
-    # Load data
-    train_ds, val_ds = load_and_prepare_data(data_cfg)
 
     # Format dataset
     def formatting_func(sample):
@@ -153,8 +138,15 @@ def train(config_path: str):
         formatting_func=formatting_func,
         data_collator=collator,
         args=training_args,
-        callbacks=[EarlyStoppingCallback(early_stopping_patience=3)],
+        compute_metrics=None,
+        callbacks=[
+            EfficiencyMetricsCallback(),
+            PerplexityCallback(),
+            EarlyStoppingCallback(early_stopping_patience=3),
+        ],
     )
+
+    compute_trainable_params(model, trainer=trainer)
 
     logger.info(">>>> Starting fine-tuning...")
     trainer.train()
@@ -164,3 +156,10 @@ def train(config_path: str):
     trainer.model.save_pretrained(output_dir)
     tokenizer.save_pretrained(output_dir)
     logger.info(f">>>> Fine tuned model saved to {output_dir}")
+
+
+def load_checkpoint(model_path: str, tokenizer_path: str):
+    """Load finetuned model and tokenizer from checkpoint."""
+    model = AutoModelForCausalLM.from_pretrained(model_path, torch_dtype=torch.bfloat16)
+    tokenizer = AutoTokenizer.from_pretrained(tokenizer_path)
+    return model, tokenizer

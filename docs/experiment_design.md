@@ -86,7 +86,6 @@ These are the evaluation metrics:
 **Evaluation metrics for instruction tuning:**
 - ROUGE
 - BLEU
-- Exact Match
 
 ### B. Parameter Efficiency
 - Trainable parameters
@@ -128,7 +127,7 @@ All experiments will be executed on the same hardware using identical software v
 - Maximum GPU memory: 24 GB
 - Precision: BF16 (or FP16)
 - Gradient checkpointing: Enabled
-- Maximum sequence length: 512
+- Maximum sequence length: 1024
 - Batch size: Fixed
 - Gradient accumulation: Fixed
 
