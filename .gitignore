@@ -8,6 +8,5 @@ outputs/
 *.egg-info/
 dist/
 todo.md
-*.json
 *.pt
 dataset/
