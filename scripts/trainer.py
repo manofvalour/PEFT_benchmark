@@ -100,6 +100,8 @@ def format_instruction(sample: dict, data_cfg: DataConfig) -> str:
 
 
 def train(config_path: str, train_ds, val_ds, finetune_type: str):
+    from peft import get_peft_model
+
     with Path.open(config_path) as f:
         cfg = json.load(f)
 
@@ -113,24 +115,40 @@ def train(config_path: str, train_ds, val_ds, finetune_type: str):
     base_model = load_base_model(model_cfg)
 
     if finetune_type == "lora":
-        from peft import LoraConfig, get_peft_model
+        from peft import LoraConfig
 
         lora_train_args_dict = cfg.get("lora", {})
-
         config = LoraConfig(**lora_train_args_dict)
-
-        model = get_peft_model(base_model, config)
     # model.print_trainable_parameters()
 
-    elif (
-        finetune_type == "adalora"
-        or finetune_type == "ia3"
-        or finetune_type == "dora"
-        or finetune_type == "p_tuning"
-    ):
-        pass
+    elif finetune_type == "dora":
+        from peft import LoraConfig
+
+        dora_train_args_dict = cfg.get("dora", {})
+        config = LoraConfig(**dora_train_args_dict)
+
+    elif finetune_type == "adalora":
+        from peft import AdaLoraConfig
+
+        adalora_train_args_dict = cfg.get("adalora", {})
+        config = AdaLoraConfig(**adalora_train_args_dict)
+
+    elif finetune_type == "ia3":
+        from peft import IA3Config
+
+        ia3_train_args_dict = cfg.get("ia3", {})
+        config = IA3Config(**ia3_train_args_dict)
+
+    elif finetune_type == "p_tuning":
+        from peft import PrefixTuningConfig
+
+        prefix_train_args_dict = cfg.get("p_tuning", {})
+        config = PrefixTuningConfig(**prefix_train_args_dict)
+
     else:
         raise ValueError("Value must be lora, adalora, ia3, dora or p_tuning")
+
+    model = get_peft_model(base_model, config)
 
     # Format dataset
     def formatting_func(sample):
@@ -139,6 +157,8 @@ def train(config_path: str, train_ds, val_ds, finetune_type: str):
     # Training arguments
     training_args = SFTConfig(
         **train_args_dict,
+        output_dir=f"./outputs/checkpoints/qwen2.5-1.5b-{finetune_type}_finetune",
+        run_name=f"qwen2.5-1_5b-alpaca-cleaned-{finetune_type}",
         deepspeed="scripts/config_file/ds_config.json",
         load_best_model_at_end=True,
         metric_for_best_model="eval_loss",

@@ -10,7 +10,7 @@
     "prompt_column": "instruction",
     "text_column": "text",
     "response_column": "output",
-    "max_seq_length": 2048,
+    "max_seq_length": 1024,
     "instruction_template": "### Instruction:\n",
     "response_template": "### Response:\n",
     "val_split": 0.5,
@@ -19,10 +19,7 @@
   },
 
   "training": {
-    "output_dir": "./outputs/checkpoints/qwen2.5-1.5b-lora_finetune",
-    "packing":true,
-    "padding_free": true,
-    "num_train_epochs": 1,
+    "num_train_epochs": 4,
     "per_device_train_batch_size": 16,
     "per_device_eval_batch_size": 32,
     "gradient_accumulation_steps": 8,
@@ -36,21 +33,17 @@
     "eval_strategy": "steps",
     "eval_steps": 20,
     "save_strategy": "steps",
-    "save_steps": 50,
+    "save_steps": 40,
     "save_total_limit": 2,
     "report_to": "wandb",
-    "run_name": "qwen2.5-1_5b-alpaca-cleaned-lora",
     "optim": "adamw_torch",
     "max_grad_norm": 1.0,
     "gradient_checkpointing": true,
-    "use_liger_kernel":false,
+    "use_liger_kernel":true,
     "gradient_checkpointing_kwargs":{"use_reentrant":false},
     "dataloader_prefetch_factor":2,
     "dataloader_persistent_workers": true,
-    "dataloader_num_workers":4,
-    "torch_compile": true,
-    "torch_compile_mode": "reduce-overhead"
-
+    "dataloader_num_workers":4
 
   },
 
@@ -63,12 +56,24 @@
     "target_modules": ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"]
    },
 
-"adalora": {},
+"adalora": {
+    "r": 8,
+    "init_r":12,
+    "tinit":200,
+    "tfinal":1000,
+    "deltaT":10,
+    "target_modules":["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"],
+    "modules_to_save":["classifier"]
+},
 
-"ia3": {},
+"ia3": {
+    "task_type":"CAUSAL_LM",
+    "target_modules":["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"],
+    "feedforward_modules":["down_proj"]
+},
 
 "dora": {
-    "r":8,
+    "r":16,
     "lora_alpha":32,
     "target_modules":["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"],
     "lora_dropout":0.1,
@@ -77,5 +82,10 @@
     "use_dora":true
 },
 
-"p_tuning":{}
+"p_tuning":{
+    "task_type":"CAUSAL_LM",
+    "num_virtual_tokens":20,
+    "prefix_projection":false,
+    "inference_mode":false
+}
 }
