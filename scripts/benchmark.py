@@ -98,7 +98,7 @@ def load_model_with_adapter(base_model_name: str, adapter_path: str = None, devi
 
 # benchmark result
 def benchmark_result(
-    model_path: str,
+    model_name: str,
     adapter_path: str,
     eval_texts: Dataset,
     prompt_template: str,
@@ -108,7 +108,7 @@ def benchmark_result(
 
     logger.info("Evaluating finetuned base model...")
 
-    model, tokenizer = load_model_with_adapter(model_path, adapter_path=None)
+    model, tokenizer = load_model_with_adapter(model_name, adapter_path=None)
 
     # ft_ppl = compute_perplexity(model, tokenizer, eval_texts)
     benchmark_result = run_generation_benchmark(model, tokenizer, eval_texts, prompt_template)
@@ -128,7 +128,7 @@ def benchmark_result(
 
 
 def eval_main(
-    model_path: str, config_path: str, prompt_template: str, adapter_path: str, output_dir: str
+    model_name: str, config_path: str, prompt_template: str, adapter_path: str, output_dir: str
 ):
 
     with Path.open(config_path) as f:
@@ -142,7 +142,7 @@ def eval_main(
         test_ds = load_from_disk(Path(data_cfg.test_file))
 
     benchmark_result(
-        model_path=model_path,
+        model_name=model_name,
         adapter_path=adapter_path,
         prompt_template=prompt_template,
         eval_texts=test_ds,
@@ -154,10 +154,10 @@ if __name__ == "__main__":
     import argparse
 
     parser = argparse.ArgumentParser()
-    parser.add_argument("--model_path", required=True, help="Path to base model")
+    parser.add_argument("--model_name", required=True, help="name of base model")
     parser.add_argument("--config_path", required=True, help="Path to config file")
-    parser.add_argument("--adapter_path", required=False, help="Path to LoRA adapter")
-    parser.add_argument("--eval_texts", required=True, help="Path to evaluation texts (JSONL)")
+    parser.add_argument("--adapter_path", required=True, help="Path to LoRA adapter")
+    # parser.add_argument("--eval_texts", required=True, help="Path to evaluation texts (JSONL)")
     parser.add_argument(
         "--prompt_template",
         default="{instruction} {input}\n\n### Response:\n",
@@ -167,5 +167,5 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     eval_main(
-        args.model_path, args.config_path, args.eval_texts, args.prompt_template, args.output_json
+        args.model_name, args.config_path, args.adapter_path, args.prompt_template, args.output_json
     )

@@ -8,12 +8,7 @@ from pathlib import Path
 from typing import Any
 
 import torch
-from config import DataConfig, ModelConfig
-
-# Main Training Entry Point
-from dataset_utils import custom_data_collator, train_val_test_split
 from datasets import load_dataset
-from evaluate import EfficiencyMetricsCallback, PerplexityCallback, compute_trainable_params
 from transformers import (
     AutoModelForCausalLM,
     AutoTokenizer,
@@ -21,6 +16,12 @@ from transformers import (
 )
 from trl import SFTConfig
 from trl.trainer.sft_trainer import SFTTrainer
+
+from scripts.config import DataConfig, ModelConfig
+
+# Main Training Entry Point
+from scripts.dataset_utils import custom_data_collator, train_val_test_split
+from scripts.evaluate import EfficiencyMetricsCallback, PerplexityCallback, compute_trainable_params
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -75,11 +76,10 @@ def load_and_prepare_data(data_cfg: DataConfig) -> tuple:
 
         train_ds, test_ds, val_ds = split["train"], split["test"], split["validation"]
 
-    else:
-        raise ValueError("Provide dataset_name or train_file.")
+        print(f"Train: {len(train_ds):,} | Val: {len(val_ds):,} | Test: {len(test_ds):,}")
+        return train_ds, val_ds, test_ds
 
-    print(f"Train: {len(train_ds):,} | Val: {len(val_ds):,} | Test: {len(test_ds):,}")
-    return train_ds, val_ds, test_ds
+    raise ValueError("Provide dataset_name or train_file.")
 
 
 # Dataset Preparation
@@ -99,17 +99,38 @@ def format_instruction(sample: dict, data_cfg: DataConfig) -> str:
     return f"{data_cfg.instruction_template}{instruction}\n\n{data_cfg.response_template}{response}"
 
 
-def train(config_path: str, train_ds, val_ds):
+def train(config_path: str, train_ds, val_ds, finetune_type: str):
     with Path.open(config_path) as f:
         cfg = json.load(f)
 
+    # loading the configurations
     model_cfg = ModelConfig(**cfg.get("model", {}))
     data_cfg = DataConfig(**cfg.get("data", {}))
     train_args_dict = cfg.get("training", {})
 
-    # Load components
+    # Load base model components
     tokenizer = load_tokenizer(model_cfg)
-    model = load_base_model(model_cfg)
+    base_model = load_base_model(model_cfg)
+
+    if finetune_type == "lora":
+        from peft import LoraConfig, get_peft_model
+
+        lora_train_args_dict = cfg.get("lora", {})
+
+        config = LoraConfig(**lora_train_args_dict)
+
+        model = get_peft_model(base_model, config)
+    # model.print_trainable_parameters()
+
+    elif (
+        finetune_type == "adalora"
+        or finetune_type == "ia3"
+        or finetune_type == "dora"
+        or finetune_type == "p_tuning"
+    ):
+        pass
+    else:
+        raise ValueError("Value must be lora, adalora, ia3, dora or p_tuning")
 
     # Format dataset
     def formatting_func(sample):
@@ -151,7 +172,7 @@ def train(config_path: str, train_ds, val_ds):
     logger.info(">>>> Starting fine-tuning...")
     trainer.train()
 
-    # Save finetuned
+    # Save finetuned model
     output_dir = training_args.output_dir
     trainer.model.save_pretrained(output_dir)
     tokenizer.save_pretrained(output_dir)

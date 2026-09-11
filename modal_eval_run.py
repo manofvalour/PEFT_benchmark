@@ -41,19 +41,24 @@ eval_volume = modal.Volume.from_name("evaluation-outputs", create_if_missing=Tru
     },
     secrets=[modal.Secret.from_name("wandb-secret")],
 )
-def run_eval_suite(model_path: str = "/training-outputs/qwen2.5-1.5b-finetune"):
+def run_eval_suite(
+    model_name: str = "Qwen/Qwen2.5-1.5B",
+    adapter_path: str = "/training-outputs/checkpoints/qwen2.5-1.5b-lora_finetune",
+):
     import subprocess
 
     subprocess.run(
         [
             "python",
             "scripts/benchmark.py",
-            "--model_path",
-            model_path,
+            "--model_name",
+            model_name,
             "--config_path",
             "scripts/config_file/config.json",
-            "--eval_texts",
-            "dataset/yahma/alpaca-cleaned/test_file",
+            "--adapter_path",
+            adapter_path,
+            # "--eval_texts",
+            # "dataset/yahma/alpaca-cleaned/test_file",
             "--output_json",
             "/eval-outputs/output/report.json",
         ],

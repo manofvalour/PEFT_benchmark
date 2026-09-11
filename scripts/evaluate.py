@@ -1,12 +1,13 @@
 """
 Evaluation Suite for Fine-tuned Models
-Includes: perplexity, ROUGE, BERTScore, task-specific metricsThese are the evaluation metrics:
+Includes: perplexity, ROUGE, BERTScore, task-specific metrics.
 
-Evaluation metrics for classification problems:
-    Accuracy, Precision, Recall, F1
+These are the evaluation metrics:
+    Evaluation metrics for classification problems:
+        Accuracy, Precision, Recall, F1
 
-Evaluation metrics for instruction tuning:
-    BLEU, ROUGE, BERTScore
+    Evaluation metrics for instruction tuning:
+        BLEU, ROUGE, BERTScore
 """
 
 import logging
@@ -92,18 +93,17 @@ class PerplexityCallback(TrainerCallback):
 
 # Generation Quality Metrics
 class EvaluationMetrics:
-    def __init__(self, predictions: list[str], references: list[str]):
-        self.predictions = predictions
-        self.references = references
+    def __init__(self):
+        pass
 
-    def compute_rouge(self) -> dict[str, float]:
+    def compute_rouge(self, predictions: list[str], references: list[str]) -> dict[str, float]:
         """ROUGE-1, ROUGE-2, ROUGE-L scores."""
         try:
             from rouge_score import rouge_scorer
 
             scorer = rouge_scorer.RougeScorer(["rouge1", "rouge2", "rougeL"], use_stemmer=True)
             scores = {"rouge1": [], "rouge2": [], "rougeL": []}
-            for pred, ref in zip(self.predictions, self.references):
+            for pred, ref in zip(predictions, references):
                 s = scorer.score(ref, pred)
                 for k in scores:
                     scores[k].append(s[k].fmeasure)
@@ -115,6 +115,8 @@ class EvaluationMetrics:
 
     def compute_bertscore(
         self,
+        predictions: list[str],
+        references: list[str],
         lang: str = "en",
         model_type: str = "roberta-large",
     ) -> dict[str, float]:
@@ -123,8 +125,8 @@ class EvaluationMetrics:
             from bert_score import score
 
             P, R, F1 = score(
-                self.predictions,
-                self.references,
+                predictions,
+                references,
                 lang=lang,
                 model_type=model_type,
                 verbose=False,  # baseline_path=None,
@@ -139,14 +141,14 @@ class EvaluationMetrics:
             logger.warning("Install bert-score: pip install bert-score")
             return {}
 
-    def compute_bleu(self) -> dict[str, float]:
+    def compute_bleu(self, predictions: list[str], references: list[str]) -> dict[str, float]:
         try:
             import sacrebleu
         except ImportError:
             logger.warning("install sacrebleu: pip install sacrebleu")
             return {}
 
-        result = sacrebleu.corpus_bleu(self.predictions, [self.references])
+        result = sacrebleu.corpus_bleu(predictions, [references])
         return {"Bleu Score": result.score}
 
 
@@ -220,7 +222,7 @@ class EfficiencyMetricsCallback(TrainerCallback):
             self.last_log_time = self.step_start_time
 
     def on_step_end(self, args, state, control, **kwargs):
-        # sample memory every step so the "average" is meaningful
+        # sampling memory every step so that the "average" provide a meaningful result
         if torch.cuda.is_available():
             allocated = torch.cuda.memory_allocated() / 1e9
             self.mem_samples.append(allocated)

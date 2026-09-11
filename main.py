@@ -10,7 +10,7 @@ from scripts.trainer import load_and_prepare_data, train
 data_cfg = DataConfig()
 
 
-def main(config_path: str):
+def main(config_path: str, finetune_type: str):
     from scripts.config import DataConfig
 
     with Path.open(config_path) as f:
@@ -39,11 +39,19 @@ def main(config_path: str):
         train_ds.save_to_disk(data_cfg.train_file)
         val_ds.save_to_disk(data_cfg.val_file)
 
-    train(config_path, train_ds, val_ds)
+    train(config_path, train_ds, val_ds, finetune_type)
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--config", required=True, help="Path to JSON config file")
-    args = parser.parse_args(["--config", "scripts/config_file/config.json"])
-    main(args.config)
+    parser.add_argument(
+        "--finetune_type",
+        required=True,
+        type=str,
+        help="type of finetuning techniques (lora, adalora, ia3, dora, p_tuning)",
+    )
+    args = parser.parse_args(
+        ["--config", "scripts/config_file/config.json", "--finetune_type", "lora"]
+    )
+    main(args.config, args.finetune_type)
