@@ -139,14 +139,8 @@ def train(config_path: str, train_ds, val_ds, finetune_type: str):
         ia3_train_args_dict = cfg.get("ia3", {})
         config = IA3Config(**ia3_train_args_dict)
 
-    elif finetune_type == "p_tuning":
-        from peft import PrefixTuningConfig
-
-        prefix_train_args_dict = cfg.get("p_tuning", {})
-        config = PrefixTuningConfig(**prefix_train_args_dict)
-
     else:
-        raise ValueError("Value must be lora, adalora, ia3, dora or p_tuning")
+        raise ValueError("Value must be lora, adalora, ia3, dora")
 
     model = get_peft_model(base_model, config)
 

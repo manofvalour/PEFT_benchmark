@@ -26,7 +26,7 @@
     "learning_rate": 2e-4,
     "weight_decay": 0.01,
     "lr_scheduler_type": "cosine",
-    "warmup_steps": 100,
+    "warmup_steps": 30,
     "bf16": true,
     "tf32": true,
     "logging_steps": 10,
@@ -57,13 +57,14 @@
    },
 
 "adalora": {
-    "r": 8,
-    "init_r":12,
-    "tinit":200,
-    "tfinal":1000,
-    "deltaT":10,
-    "target_modules":["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"],
-    "modules_to_save":["classifier"]
+    "init_r": 32,
+    "target_r": 16,
+    "tinit": 20,
+    "tfinal": 220,
+    "deltaT": 10,
+    "total_step": 276,
+    "target_modules": ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"],
+    "modules_to_save": ["classifier"]
 },
 
 "ia3": {
@@ -80,12 +81,5 @@
     "bias":"none",
     "task_type":"CAUSAL_LM",
     "use_dora":true
-},
-
-"p_tuning":{
-    "task_type":"CAUSAL_LM",
-    "num_virtual_tokens":20,
-    "prefix_projection":false,
-    "inference_mode":false
 }
 }

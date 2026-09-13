@@ -38,6 +38,6 @@
   "train_micro_batch_size_per_gpu": "auto",
   "fp16": { "enabled": "auto" },
   "bf16": { "enabled": "auto" },
-  "steps_per_print": 15,
+  "steps_per_print": 10,
   "wall_clock_breakdown": false
 }

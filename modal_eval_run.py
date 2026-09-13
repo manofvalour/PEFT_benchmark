@@ -43,7 +43,7 @@ eval_volume = modal.Volume.from_name("evaluation-outputs", create_if_missing=Tru
 )
 def run_eval_suite(
     model_name: str = "Qwen/Qwen2.5-1.5B",
-    adapter_path: str = "/training-outputs/checkpoints/qwen2.5-1.5b-lora_finetune",
+    adapter_path: str = "/training-outputs/checkpoints/qwen2.5-1.5b-dora_finetune",
 ):
     import subprocess
 
@@ -60,7 +60,7 @@ def run_eval_suite(
             # "--eval_texts",
             # "dataset/yahma/alpaca-cleaned/test_file",
             "--output_json",
-            "/eval-outputs/output/report.json",
+            "/eval-outputs/output/dora_report.json",
         ],
         check=True,
         cwd="/root/app",

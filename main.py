@@ -49,9 +49,9 @@ if __name__ == "__main__":
         "--finetune_type",
         required=True,
         type=str,
-        help="type of finetuning techniques (lora, adalora, ia3, dora, p_tuning)",
+        help="type of finetuning techniques (e.g lora, adalora, ia3, dora)",
     )
     args = parser.parse_args(
-        ["--config", "scripts/config_file/config.json", "--finetune_type", "lora"]
+        ["--config", "scripts/config_file/config.json", "--finetune_type", "adalora"]
     )
     main(args.config, args.finetune_type)

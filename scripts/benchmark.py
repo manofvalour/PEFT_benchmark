@@ -65,10 +65,10 @@ def run_generation_benchmark(
             predictions.append(dec[len(prompt) :].strip())
             references.append(ref.strip())
 
-    eval = EvaluationMetrics(predictions, references)
-    rouge = eval.compute_rouge()
-    bert = eval.compute_bertscore()
-    bleu = eval.compute_bleu()
+    eval = EvaluationMetrics()
+    rouge = eval.compute_rouge(predictions, references)
+    bert = eval.compute_bertscore(predictions, references)
+    bleu = eval.compute_bleu(predictions, references)
 
     return BenchmarkResult(
         model_name=getattr(model.config, "_name_or_path", "unknown"),
@@ -156,7 +156,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--model_name", required=True, help="name of base model")
     parser.add_argument("--config_path", required=True, help="Path to config file")
-    parser.add_argument("--adapter_path", required=True, help="Path to LoRA adapter")
+    parser.add_argument("--adapter_path", required=True, help="Path to LoRA, adalora, ia3,dora")
     # parser.add_argument("--eval_texts", required=True, help="Path to evaluation texts (JSONL)")
     parser.add_argument(
         "--prompt_template",
