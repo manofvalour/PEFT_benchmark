@@ -1,4 +1,8 @@
+import logging
+
 import modal
+
+logger = logging.getLogger(__name__)
 
 app = modal.App("qwen-sft-evaluation")
 
@@ -27,7 +31,6 @@ image = (
     )
 )
 
-training_volume = modal.Volume.from_name("training-outputs", create_if_missing=False)
 eval_volume = modal.Volume.from_name("evaluation-outputs", create_if_missing=True)
 
 
@@ -36,38 +39,44 @@ eval_volume = modal.Volume.from_name("evaluation-outputs", create_if_missing=Tru
     gpu="A10G:1",
     timeout=60 * 60 * 2,
     volumes={
-        "/training-outputs": training_volume,  # mount the volume that actually has the model
-        "/eval-outputs": eval_volume,
+        #    "/training-outputs": training_volume,  # mount the volume that actually has the model
+        "/evaluation-outputs": eval_volume,
     },
     secrets=[modal.Secret.from_name("wandb-secret")],
 )
-def run_eval_suite(
-    model_name: str = "Qwen/Qwen2.5-1.5B",
-    adapter_path: str = "/training-outputs/checkpoints/qwen2.5-1.5b-dora_finetune",
-):
+def run_eval_suite(adapter_path: str, model_name: str, report_path: str, config_path: str):
     import subprocess
 
-    subprocess.run(
-        [
-            "python",
-            "scripts/benchmark.py",
-            "--model_name",
-            model_name,
-            "--config_path",
-            "scripts/config_file/config.json",
-            "--adapter_path",
-            adapter_path,
-            # "--eval_texts",
-            # "dataset/yahma/alpaca-cleaned/test_file",
-            "--output_json",
-            "/eval-outputs/output/dora_report.json",
-        ],
-        check=True,
-        cwd="/root/app",
-    )
-    eval_volume.commit()
+    logging.basicConfig(level=logging.INFO, force=True)
+    logger.info("Starting eval...")
+
+    try:
+        subprocess.run(
+            [
+                "python",
+                "scripts/benchmark.py",
+                "--model_name",
+                model_name,
+                "--config_path",
+                config_path,
+                "--adapter_path",
+                adapter_path,
+                "--output_dir",
+                f"/evaluation-outputs/reports/{report_path}",
+            ],
+            check=True,
+            cwd="/root/app",
+        )
+    finally:
+        eval_volume.commit()
 
 
 @app.local_entrypoint()
-def main():
-    run_eval_suite.remote()
+def main(adapter_path, model_name, report_dir, config_path="scripts/config_file/config.json"):
+
+    run_eval_suite.remote(
+        adapter_path=adapter_path,
+        model_name=model_name,
+        report_path=report_dir,
+        config_path=config_path,
+    )

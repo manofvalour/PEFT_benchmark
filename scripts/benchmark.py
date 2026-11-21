@@ -1,5 +1,6 @@
 import json
 import logging
+import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -11,6 +12,12 @@ from peft import PeftModel
 from tqdm import tqdm
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+    stream=sys.stdout,
+    force=True,  # override handlers set by libraries like transformers
+)
 logger = logging.getLogger(__name__)
 
 
@@ -33,7 +40,7 @@ def run_generation_benchmark(
     max_new_tokens: int = 256,
     batch_size: int = 70,
     temperature: float = 0.1,
-) -> BenchmarkResult:
+):
     """Run full generation benchmark on a dataset split."""
     predictions, references = [], []
 
@@ -44,7 +51,7 @@ def run_generation_benchmark(
 
         ## encode input
         inputs = tokenizer(
-            prompts, return_tensors="pt", padding=True, truncation=True, max_length=512
+            prompts, return_tensors="pt", padding=True, truncation=True, max_length=1024
         ).to(model.device)
 
         # run model generation
@@ -58,6 +65,7 @@ def run_generation_benchmark(
             )
 
         # decode the input
+        # gen_tokens = outputs[:, input_len:]
         decoded = tokenizer.batch_decode(outputs, skip_special_tokens=True)
 
         # Strip prompt from output
@@ -65,6 +73,7 @@ def run_generation_benchmark(
             predictions.append(dec[len(prompt) :].strip())
             references.append(ref.strip())
 
+    # return predictions, references
     eval = EvaluationMetrics()
     rouge = eval.compute_rouge(predictions, references)
     bert = eval.compute_bertscore(predictions, references)
@@ -85,24 +94,26 @@ def load_model_with_adapter(base_model_name: str, adapter_path: str = None, devi
     kwargs = {"device_map": device, "torch_dtype": torch.bfloat16}
     base = AutoModelForCausalLM.from_pretrained(base_model_name, **kwargs)
 
-    if adapter_path:
+    if adapter_path is not None:
         tokenizer = AutoTokenizer.from_pretrained(adapter_path)
         model = PeftModel.from_pretrained(base, adapter_path)
+
         logger.info(f">>> Loaded {base_model_name} + adapter from {adapter_path}")
+
     else:
         tokenizer = AutoTokenizer.from_pretrained(base_model_name)
         model = base
+
+    tokenizer.padding_side = "left"
+    if tokenizer.pad_token is None:
+        tokenizer.pad_token = tokenizer.eos_token
 
     return model, tokenizer
 
 
 # benchmark result
 def benchmark_result(
-    model_name: str,
-    adapter_path: str,
-    eval_texts: Dataset,
-    prompt_template: str,
-    output_json: str = "eval_comparison.json",
+    model_name: str, adapter_path: str, eval_texts: Dataset, prompt_template: str, output_json: str
 ):
     """evaluation result for fine-tuned model."""
 
@@ -111,7 +122,9 @@ def benchmark_result(
     model, tokenizer = load_model_with_adapter(model_name, adapter_path=None)
 
     # ft_ppl = compute_perplexity(model, tokenizer, eval_texts)
-    benchmark_result = run_generation_benchmark(model, tokenizer, eval_texts, prompt_template)
+    benchmark_result = run_generation_benchmark(
+        model=model, tokenizer=tokenizer, dataset=eval_texts, prompt_template=prompt_template
+    )
     ft_result = benchmark_result.metrics
 
     results = {
@@ -128,7 +141,11 @@ def benchmark_result(
 
 
 def eval_main(
-    model_name: str, config_path: str, prompt_template: str, adapter_path: str, output_dir: str
+    model_name: str,
+    config_path: str,
+    prompt_template: str,
+    output_dir: str,
+    adapter_path: str | None = None,
 ):
 
     with Path.open(config_path) as f:
@@ -156,16 +173,19 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--model_name", required=True, help="name of base model")
     parser.add_argument("--config_path", required=True, help="Path to config file")
-    parser.add_argument("--adapter_path", required=True, help="Path to LoRA, adalora, ia3,dora")
-    # parser.add_argument("--eval_texts", required=True, help="Path to evaluation texts (JSONL)")
     parser.add_argument(
         "--prompt_template",
         default="{instruction} {input}\n\n### Response:\n",
         help="Prompt template for generation",
     )
-    parser.add_argument("--output_json", default="eval.json", help="Output JSON file for results")
+    parser.add_argument("--output_dir", default="eval.json", help="Output JSON file for results")
+    parser.add_argument("--adapter_path", required=False, help="Path to LoRA, adalora, ia3,dora")
     args = parser.parse_args()
 
     eval_main(
-        args.model_name, args.config_path, args.adapter_path, args.prompt_template, args.output_json
+        model_name=args.model_name,
+        config_path=args.config_path,
+        adapter_path=args.adapter_path,
+        prompt_template=args.prompt_template,
+        output_dir=args.output_dir,
     )

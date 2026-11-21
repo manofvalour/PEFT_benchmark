@@ -41,7 +41,7 @@ class LoadModelWithAdapter:
         max_new_tokens: int = 512,
         temperature: float = 0.7,
         top_p: float = 0.9,
-        top_k: int = 50,
+        top_k: int = 20,
         repetition_penalty: float = 1.1,
         stream: bool = False,
     ) -> str:

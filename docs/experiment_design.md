@@ -15,7 +15,6 @@ The different independent, controlled, and dependent variables
 - AdaLORA
 - IA**3
 - DORA
-- Prefix Tuning
 
 ### Controlled Variables
 parameters that remain constant during experimentation:
@@ -69,7 +68,6 @@ These are the different PEFT methods to compare:
 - AdaLORA
 - IA**3
 - DORA
-- Prefix Tuning
 
 ## Evaluation Metrics
 These are the evaluation metrics:

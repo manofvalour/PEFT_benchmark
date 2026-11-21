@@ -18,7 +18,7 @@ class DataConfig:
     dataset_config: str | None = None
     train_file: str | None = None
     val_file: str | None = None
-    test_file: str | None = "dataset/test_dataset"
+    test_file: str | None = None
     test_split: float = 0.2
     text_column: str = "text"
     prompt_column: str | None = "instruction"

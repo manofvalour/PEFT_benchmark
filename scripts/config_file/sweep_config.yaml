@@ -1,0 +1,80 @@
+# PEFT Hyperparameter Sweep Configuration
+# Each method defines its own search space.
+# Fixed parameters apply to ALL trials across ALL methods.
+
+sweep:
+  name: "peft_sweep"
+  method: "random"       # random | grid
+  num_trials: 20         # max trials per method (for random); ignored for grid
+  metric: "eval_loss"    # metric to track (lower is better)
+  project: "research-peft-sweep"
+
+# Fixed parameters (constant across all trials)
+fixed:
+  model:
+    model_name_or_path: "Qwen/Qwen2.5-1.5B"
+    trust_remote_code: false
+    use_flash_attn: true
+
+  data:
+    dataset_name: "yahma/alpaca-cleaned"
+    prompt_column: "instruction"
+    text_column: "text"
+    response_column: "output"
+    max_seq_length: 1024
+    instruction_template: "### Instruction:\n"
+    response_template: "### Response:\n"
+    val_split: 0.5
+    test_split: 0.2
+    num_proc: 4
+
+  training:
+    num_train_epochs: 4
+    per_device_train_batch_size: 16
+    per_device_eval_batch_size: 32
+    gradient_accumulation_steps: 8
+    weight_decay: 0.01
+    lr_scheduler_type: "cosine"
+    bf16: true
+    tf32: true
+    logging_steps: 10
+    eval_strategy: "steps"
+    eval_steps: 20
+    save_strategy: "steps"
+    save_steps: 40
+    save_total_limit: 2
+    report_to: "wandb"
+    optim: "adamw_torch"
+    max_grad_norm: 1.0
+    gradient_checkpointing: true
+    use_liger_kernel: true
+    gradient_checkpointing_kwargs: { use_reentrant: false }
+    dataloader_prefetch_factor: 2
+    dataloader_persistent_workers: true
+    dataloader_num_workers: 4
+
+# Search spaces per PEFT method
+# Each key under a method is swept. Keys NOT listed here use the base
+# config.json defaults.
+
+search_space:
+  lora:
+    r: [4, 8, 16, 32]
+    lora_alpha: [8, 16, 32, 64]
+    lora_dropout: [0.0, 0.05, 0.1]
+    learning_rate: [1.0e-5, 5.0e-5, 1.0e-4, 2.0e-4, 5.0e-4]
+
+  dora:
+    r: [4, 8, 16, 32]
+    lora_alpha: [8, 16, 32, 64]
+    lora_dropout: [0.0, 0.05, 0.1]
+    learning_rate: [1.0e-5, 5.0e-5, 1.0e-4, 2.0e-4, 5.0e-4]
+
+  adalora:
+    init_r: [16, 32, 64]
+    target_r: [8, 16, 32]
+    lora_alpha: [8, 16, 32]
+    learning_rate: [1.0e-5, 5.0e-5, 1.0e-4, 2.0e-4]
+
+  ia3:
+    learning_rate: [1.0e-5, 5.0e-5, 1.0e-4, 2.0e-4, 5.0e-4]
