@@ -8,12 +8,7 @@ from pathlib import Path
 from typing import Any
 
 import torch
-from config import DataConfig, ModelConfig
-
-# Main Training Entry Point
-from dataset_utils import custom_data_collator, train_val_test_split
 from datasets import load_dataset
-from evaluate import EfficiencyMetricsCallback, PerplexityCallback, compute_trainable_params
 from transformers import (
     AutoModelForCausalLM,
     AutoTokenizer,
@@ -21,6 +16,12 @@ from transformers import (
 )
 from trl import SFTConfig
 from trl.trainer.sft_trainer import SFTTrainer
+
+from scripts.config import DataConfig, ModelConfig
+
+# Main Training Entry Point
+from scripts.dataset_utils import custom_data_collator, train_val_test_split
+from scripts.evaluate import EfficiencyMetricsCallback, PerplexityCallback, compute_trainable_params
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -34,7 +35,6 @@ def load_base_model(model_cfg: ModelConfig):
         "pretrained_model_name_or_path": model_cfg.model_name_or_path,
         "trust_remote_code": model_cfg.trust_remote_code,
         "torch_dtype": torch.bfloat16,
-        #  "device_map": "auto",
     }
 
     # if model_cfg.cache_dir:
@@ -75,11 +75,10 @@ def load_and_prepare_data(data_cfg: DataConfig) -> tuple:
 
         train_ds, test_ds, val_ds = split["train"], split["test"], split["validation"]
 
-    else:
-        raise ValueError("Provide dataset_name or train_file.")
+        print(f"Train: {len(train_ds):,} | Val: {len(val_ds):,} | Test: {len(test_ds):,}")
+        return train_ds, val_ds, test_ds
 
-    print(f"Train: {len(train_ds):,} | Val: {len(val_ds):,} | Test: {len(test_ds):,}")
-    return train_ds, val_ds, test_ds
+    raise ValueError("Provide dataset_name or train_file.")
 
 
 # Dataset Preparation
@@ -99,25 +98,77 @@ def format_instruction(sample: dict, data_cfg: DataConfig) -> str:
     return f"{data_cfg.instruction_template}{instruction}\n\n{data_cfg.response_template}{response}"
 
 
-def train(config_path: str, train_ds, val_ds):
+def train(config_path: str, train_ds, val_ds, finetune_type: str) -> dict:
+    """Run fine-tuning and return a metrics dict.
+
+    When ``config_path`` points to a sweep trial config (written by sweep.py),
+    the output directory and run name include a trial ID to avoid collisions.
+    """
+    from peft import get_peft_model
+
     with Path.open(config_path) as f:
         cfg = json.load(f)
 
+    # loading the configurations
     model_cfg = ModelConfig(**cfg.get("model", {}))
     data_cfg = DataConfig(**cfg.get("data", {}))
     train_args_dict = cfg.get("training", {})
 
-    # Load components
+    # Detect sweep trial (config lives in sweep_trial_*.json)
+    config_stem = Path(config_path).stem
+    is_sweep = config_stem.startswith("sweep_trial_")
+    trial_tag = config_stem.replace("sweep_trial_", "") if is_sweep else ""
+
+    # Load base model components
     tokenizer = load_tokenizer(model_cfg)
-    model = load_base_model(model_cfg)
+    base_model = load_base_model(model_cfg)
+
+    if finetune_type == "lora":
+        from peft import LoraConfig
+
+        lora_train_args_dict = cfg.get("lora", {})
+        config = LoraConfig(**lora_train_args_dict)
+
+    elif finetune_type == "dora":
+        from peft import LoraConfig
+
+        dora_train_args_dict = cfg.get("dora", {})
+        config = LoraConfig(**dora_train_args_dict)
+
+    elif finetune_type == "adalora":
+        from peft import AdaLoraConfig
+
+        adalora_train_args_dict = cfg.get("adalora", {})
+        config = AdaLoraConfig(**adalora_train_args_dict)
+
+    elif finetune_type == "ia3":
+        from peft import IA3Config
+
+        ia3_train_args_dict = cfg.get("ia3", {})
+        config = IA3Config(**ia3_train_args_dict)
+
+    else:
+        raise ValueError("Value must be lora, adalora, ia3, dora")
+
+    model = get_peft_model(base_model, config)
 
     # Format dataset
     def formatting_func(sample):
         return format_instruction(sample, data_cfg)
 
+    # Output directory and run name
+    if is_sweep:
+        output_dir = f"./outputs/checkpoints/sweep_{finetune_type}_trial{trial_tag}"
+        run_name = f"sweep_{finetune_type}_trial{trial_tag}"
+    else:
+        output_dir = f"./outputs/checkpoints/qwen2.5-1.5b-{finetune_type}_finetune"
+        run_name = f"qwen2.5-1_5b-alpaca-cleaned-{finetune_type}"
+
     # Training arguments
     training_args = SFTConfig(
         **train_args_dict,
+        output_dir=output_dir,
+        run_name=run_name,
         deepspeed="scripts/config_file/ds_config.json",
         load_best_model_at_end=True,
         metric_for_best_model="eval_loss",
@@ -146,16 +197,43 @@ def train(config_path: str, train_ds, val_ds):
         ],
     )
 
-    compute_trainable_params(model, trainer=trainer)
+    param_metrics = compute_trainable_params(model, trainer=trainer)
 
     logger.info(">>>> Starting fine-tuning...")
     trainer.train()
 
-    # Save finetuned
-    output_dir = training_args.output_dir
+    # Save finetuned model
     trainer.model.save_pretrained(output_dir)
     tokenizer.save_pretrained(output_dir)
     logger.info(f">>>> Fine tuned model saved to {output_dir}")
+
+    # Collect final metrics
+    eval_metrics = trainer.evaluate()
+    result = {
+        "train_loss": trainer.state.log_history[-1].get("loss"),
+        "eval_loss": eval_metrics.get("eval_loss"),
+        "trainable_params": param_metrics.get("trainable_params"),
+        "trainable_pct": param_metrics.get("trainable_pct"),
+        "total_params": param_metrics.get("total_params"),
+        "output_dir": output_dir,
+        "global_step": trainer.state.global_step,
+    }
+
+    # Extract efficiency metrics from the last log entry
+    for entry in reversed(trainer.state.log_history):
+        if "train_runtime" in entry:
+            result["train_runtime_s"] = entry["train_runtime"]
+            result["train_samples_per_second"] = entry.get("train_samples_per_second")
+            break
+
+    # Extract memory metrics from callback logs
+    for entry in reversed(trainer.state.log_history):
+        if "memory/peak_gb_across_gpus" in entry:
+            result["peak_gpu_gb"] = entry["memory/peak_gb_across_gpus"]
+            break
+
+    logger.info(f">>>> Metrics: {result}")
+    return result
 
 
 def load_checkpoint(model_path: str, tokenizer_path: str):

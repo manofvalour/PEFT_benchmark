@@ -9,6 +9,7 @@
       "eps": 1e-8
     }
   },
+
   "scheduler": {
     "type": "WarmupDecayLR",
     "params": {
@@ -20,7 +21,7 @@
   },
 
   "zero_optimization": {
-    "stage": 2,
+    "stage": 0,
     "offload_optimizer": { "device": "none" },
     "offload_param": { "device": "none" },
     "allgather_partitions": true,
@@ -37,6 +38,6 @@
   "train_micro_batch_size_per_gpu": "auto",
   "fp16": { "enabled": "auto" },
   "bf16": { "enabled": "auto" },
-  "steps_per_print": 25,
+  "steps_per_print": 10,
   "wall_clock_breakdown": false
 }

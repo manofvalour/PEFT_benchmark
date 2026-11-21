@@ -15,7 +15,6 @@ The different independent, controlled, and dependent variables
 - AdaLORA
 - IA**3
 - DORA
-- Prefix Tuning
 
 ### Controlled Variables
 parameters that remain constant during experimentation:
@@ -61,7 +60,7 @@ Evaluating how different Parameter-Efficient Fine-Tuning (PEFT) methods trade of
 
 ## dataset
 - AGnews
--yahma/alpaca-cleaned
+- yahma/alpaca-cleaned
 
 ## PEFT methods to compare
 These are the different PEFT methods to compare:
@@ -69,7 +68,6 @@ These are the different PEFT methods to compare:
 - AdaLORA
 - IA**3
 - DORA
-- Prefix Tuning
 
 ## Evaluation Metrics
 These are the evaluation metrics:
